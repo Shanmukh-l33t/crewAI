@@ -57,6 +57,9 @@ _DATES: Final = "datetime64[us]"
 
 _US_NUMBER: Final = re.compile(r"[-+]?(\d{1,3}(,\d{3})+|\d+)(\.\d+)?([eE][-+]?\d+)?")
 _EU_NUMBER: Final = re.compile(r"[-+]?(\d{1,3}(\.\d{3})+|\d+)(,\d+)?")
+# An integer of more than 15 significant digits: a float64 cannot hold it as
+# written, so reading one would round it and merge distinct long IDs (#9380).
+_LONG_INTEGER: Final = re.compile(r"[-+]?0*[1-9]\d{15,}")
 _DATE_TEXT: Final = re.compile(
     r"\d{4}-\d{1,2}-\d{1,2}([ T]\d{1,2}:\d{2}(:\d{2})?)?|\d{1,2}[./]\d{1,2}[./]\d{2,4}"
 )
@@ -760,7 +763,12 @@ def _build_table(sheet: Sheet, index: int, detected: bool) -> Table:
 
 
 def numbers(texts: Column, decimal_comma: bool) -> Column:
-    """Text that reads as a number, as floats; NaN where it doesn't."""
+    """Text that reads as a number, as floats; NaN where it doesn't.
+
+    An integer of more than 15 significant digits is left unread: a float64
+    cannot hold it as written, so a column of long IDs must keep every digit
+    (#9380).
+    """
     cleaned = texts.str.replace("\N{NO-BREAK SPACE}", "", regex=False).str.replace(
         " ", "", regex=False
     )
@@ -773,6 +781,7 @@ def numbers(texts: Column, decimal_comma: bool) -> Column:
         matched = cleaned.str.fullmatch(_US_NUMBER.pattern)
         cleaned = cleaned.str.replace(",", "", regex=False)
     keep = matched.fillna(False).astype(bool)
+    keep &= ~cleaned.str.fullmatch(_LONG_INTEGER.pattern).fillna(False).astype(bool)
     return pd.to_numeric(cleaned.where(keep), errors="coerce")
 
 

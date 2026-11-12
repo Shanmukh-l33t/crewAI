@@ -314,6 +314,27 @@ class TestFilters:
                 where=[{"column": "day", "op": "eq", "values": ["01/03/2026"]}],
             )
 
+    def test_an_eq_filter_on_a_long_id_matches_only_its_row(self):
+        """Long IDs read as one rounded float once matched every row (#9380)."""
+        book = parse(
+            b"order_id,amount\n"
+            b"1234567890123456789,10\n"
+            b"1234567890123456790,20\n"
+            b"1234567890123456791,5\n",
+            "orders.csv",
+        )
+        result = ask(
+            book,
+            "orders.csv",
+            operation="rows",
+            where=[
+                {"column": "order_id", "op": "eq", "values": ["1234567890123456790"]}
+            ],
+        )
+        assert body(result).startswith(
+            'data: 1 of 3 rows match (order_id = "1234567890123456790")'
+        )
+
     @pytest.mark.parametrize(
         ("column", "op", "values", "expected"),
         [

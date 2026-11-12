@@ -480,6 +480,55 @@ class TestTables:
         assert str(table.frame["valid until"].max().date()) == "9999-12-31"
 
 
+class TestLongIdentifiers:
+    """A column of long IDs must keep every digit: a float64 rounds past 15
+    significant digits, so distinct order IDs read as one wrong value (#9380)."""
+
+    IDS = (
+        b"order_id,amount\n"
+        b"1234567890123456789,10\n"
+        b"1234567890123456790,20\n"
+        b"1234567890123456791,5\n"
+    )
+
+    def test_long_ids_stay_text_and_keep_every_digit(self):
+        table = parse(self.IDS, "orders.csv").sheets[0].table()
+        assert table.kinds["order_id"] == "text"
+        assert list(table.frame["order_id"]) == [
+            "1234567890123456789",
+            "1234567890123456790",
+            "1234567890123456791",
+        ]
+
+    def test_long_ids_with_thousands_separators_stay_text_too(self):
+        csv = b'order_id\n"1,234,567,890,123,456,789"\n"1,234,567,890,123,456,790"\n'
+        table = parse(csv, "orders.csv").sheets[0].table()
+        assert table.kinds["order_id"] == "text"
+        assert list(table.frame["order_id"]) == [
+            "1,234,567,890,123,456,789",
+            "1,234,567,890,123,456,790",
+        ]
+
+    def test_long_ids_in_a_semicolon_file_stay_text(self):
+        csv = (
+            b"order_id;amount\n"
+            b"1.234.567.890.123.456.789;10\n"
+            b"1.234.567.890.123.456.790;20\n"
+        )
+        table = parse(csv, "orders.csv").sheets[0].table()
+        assert table.kinds["order_id"] == "text"
+        assert list(table.frame["order_id"]) == [
+            "1.234.567.890.123.456.789",
+            "1.234.567.890.123.456.790",
+        ]
+
+    def test_ids_of_fifteen_digits_are_still_numbers(self):
+        csv = b"order_id,amount\n123456789012345,10\n987654321098765,20\n"
+        table = parse(csv, "orders.csv").sheets[0].table()
+        assert table.kinds["order_id"] == "integer"
+        assert list(table.frame["order_id"]) == [123456789012345, 987654321098765]
+
+
 class TestText:
     def test_utf8_with_a_byte_order_mark(self):
         book = parse("﻿Name,City\nJosé,Köln\n".encode(), "a.csv")
